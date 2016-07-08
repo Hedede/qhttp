@@ -41,6 +41,9 @@ public: // QHttpAbstractOutput methods:
     /** @see QHttpAbstractOutput::addHeader(). */
     void            addHeader(const QByteArray& field, const QByteArray& value) override;
 
+    /** @see QHttpAbstractOutput::addHeaders(). */
+    void            addHeaders(const QHash<QByteArray, QByteArray> &headers) override;
+
     /** @see QHttpAbstractOutput::headers(). */
     THeaderHash&    headers() override;
 

@@ -31,8 +31,8 @@ public:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-typedef std::function<void (const QByteArray&)>     TDataHandler;
-typedef std::function<void (void)>                  TEndHandler;
+typedef std::function<void (QByteArray)>     TDataHandler;
+typedef std::function<void (void)>           TEndHandler;
 
 ///////////////////////////////////////////////////////////////////////////////
 /** an interface for input (incoming) HTTP packets.
@@ -65,7 +65,7 @@ signals:
      * @note This may be emitted zero or more times depending on the transfer type.
      * @see onData();
      */
-    void                        data(const QByteArray &data);
+    void                        data(QByteArray data);
 
     /** Emitted when the incomming packet has been fully received.
      * @note The no more data() signals will be emitted after this.
@@ -79,7 +79,9 @@ public:
      * @note if you set this handler, the data() signal won't be emitted anymore.
      */
     void                        onData(const TDataHandler& dataHandler) {
-        idataHandler = dataHandler;
+        QObject::connect(this, &QHttpAbstractInput::data, [dataHandler](QByteArray data){
+            dataHandler(data);
+        });
     }
 
     /** optionally set a handler for end() signal.
@@ -87,16 +89,28 @@ public:
      * @note if you set this handler, the end() signal won't be emitted anymore.
      */
     void                        onEnd(const TEndHandler& endHandler) {
-        iendHandler  = endHandler;
+        QObject::connect(this, &QHttpAbstractInput::end, [endHandler](){
+            endHandler();
+        });
     }
+
+public:
+    /** tries to collect all the incoming data internally.
+     * @note if you call this method, data() signal won't be emitted and
+     *  onData() will have no effect.
+     *
+     * @param atMost maximum acceptable incoming data. if the incoming data
+     *  exceeds this value, the connection won't read any more data and
+     *  end() signal will be emitted. -1 means unlimited.
+     */
+    virtual void                collectData(int atMost = -1) =0;
+
+    /** returns the collected data requested by collectData(). */
+    virtual const QByteArray&   collectedData()const =0;
 
 
 public:
     virtual                    ~QHttpAbstractInput() = default;
-
-protected:
-    TDataHandler                idataHandler = nullptr;
-    TEndHandler                 iendHandler  = nullptr;
 
     explicit                    QHttpAbstractInput(QObject* parent);
 
@@ -116,9 +130,17 @@ public:
      * version is "1.1" set by default. */
     virtual void            setVersion(const QString& versionString)=0;
 
+    /** helper function. @sa addHeader */
+    template<typename T>
+    void                    addHeaderValue(const QByteArray &field, T value);
+
     /** adds an HTTP header to the packet.
      * @note this method does not actually write anything to socket, just prepares the headers(). */
     virtual void            addHeader(const QByteArray& field, const QByteArray& value)=0;
+
+    /** adds HTTP headers to the packet.
+     * @note this method does not actually write anything to socket, just prepares the headers(). */
+    virtual void            addHeaders(const QHash<QByteArray, QByteArray> &headers)=0;
 
     /** returns all the headers that already been set. */
     virtual THeaderHash&    headers()=0;
@@ -153,6 +175,21 @@ protected:
 
     Q_DISABLE_COPY(QHttpAbstractOutput)
 };
+
+template<> inline void
+QHttpAbstractOutput::addHeaderValue<int>(const QByteArray &field, int value) {
+    addHeader(field, QString::number(value).toLatin1());
+}
+
+template<> inline void
+QHttpAbstractOutput::addHeaderValue<size_t>(const QByteArray &field, size_t value) {
+    addHeader(field, QString::number(value).toLatin1());
+}
+
+template<> inline void
+QHttpAbstractOutput::addHeaderValue<QString>(const QByteArray &field, QString value) {
+    addHeader(field, value.toUtf8());
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 } // namespace qhttp

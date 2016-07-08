@@ -14,36 +14,19 @@
 #include "qhttpclientrequest_private.hpp"
 #include "qhttpclientresponse_private.hpp"
 
-#include <QPointer>
-#include <QBasicTimer>
-#include <QFile>
-
 ///////////////////////////////////////////////////////////////////////////////
 namespace qhttp {
 namespace client {
 ///////////////////////////////////////////////////////////////////////////////
 
-class QHttpClientPrivate : public HttpParserBase<QHttpClientPrivate>
+class QHttpClientPrivate : public HttpParser<QHttpClientPrivate>
 {
     Q_DECLARE_PUBLIC(QHttpClient)
 
 public:
-    THttpMethod     ilastMethod;
-    QUrl            ilastUrl;
-
-    quint32         itimeOut = 0;
-    QBasicTimer     itimer;
-
-public:
-    explicit     QHttpClientPrivate(QHttpClient* q) : HttpParserBase(HTTP_RESPONSE), q_ptr(q) {
+    explicit     QHttpClientPrivate(QHttpClient* q) : HttpParser(HTTP_RESPONSE), q_ptr(q) {
         QObject::connect(q_func(),    &QHttpClient::disconnected,    [this](){
-            // if socket drops and http_parser can find messageComplete, calls it manually
-            messageComplete(nullptr);
-
-            if ( itcpSocket )
-                itcpSocket->deleteLater();
-            if ( ilocalSocket )
-                ilocalSocket->deleteLater();
+            release();
         });
 
         QHTTP_LINE_DEEPLOG
@@ -53,30 +36,74 @@ public:
         QHTTP_LINE_DEEPLOG
     }
 
+    void         release() {
+        // if socket drops and http_parser can not call messageComplete, dispatch the ilastResponse
+        onDispatchResponse();
+
+        isocket.disconnectAllQtConnections();
+        isocket.close();
+        isocket.release();
+
+        if ( ilastRequest ) {
+            ilastRequest->deleteLater();
+            ilastRequest  = nullptr;
+        }
+        if ( ilastResponse ) {
+            ilastResponse->deleteLater();
+            ilastResponse = nullptr;
+        }
+
+        // must be called! or the later http_parser_execute() may fail
+        http_parser_init(&iparser, HTTP_RESPONSE);
+    }
+
     void         initializeSocket() {
-        if ( q_func()->backendType() == ETcpSocket ) {
-            itcpSocket   = new QTcpSocket(q_func());
+        if ( isocket.isOpen() ) {
+            if ( ikeepAlive ) // no need to reconnect. do nothing and simply return
+                return;
 
-            QObject::connect(itcpSocket,  &QTcpSocket::connected, [this](){
+            // close previous connection
+            release(); // release now! instead being called by emitted disconnected signal
+        }
+
+        ikeepAlive = false;
+
+        // create a tcp connection
+        if ( isocket.ibackendType == ETcpSocket ) {
+
+            QTcpSocket* sok    =  new QTcpSocket(q_func());
+            isocket.itcpSocket = sok;
+
+            QObject::connect(sok,       &QTcpSocket::connected, [this](){
                 onConnected();
             });
-            QObject::connect(itcpSocket,  &QTcpSocket::readyRead, [this](){
+            QObject::connect(sok,       &QTcpSocket::readyRead, [this](){
                 onReadyRead();
             });
-            QObject::connect(itcpSocket,  &QTcpSocket::disconnected,
-                             q_func(),    &QHttpClient::disconnected);
+            QObject::connect(sok,       &QTcpSocket::bytesWritten, [this](qint64){
+                if ( isocket.itcpSocket->bytesToWrite() == 0  &&  ilastRequest )
+                    emit ilastRequest->allBytesWritten();
+            });
+            QObject::connect(sok,       &QTcpSocket::disconnected,
+                             q_func(),  &QHttpClient::disconnected);
 
-        } else if ( q_func()->backendType() == ELocalSocket ) {
-            ilocalSocket = new QLocalSocket(q_func());
+        } else if ( isocket.ibackendType == ELocalSocket ) {
 
-            QObject::connect(ilocalSocket,  &QLocalSocket::connected, [this](){
+            QLocalSocket* sok    = new QLocalSocket(q_func());
+            isocket.ilocalSocket = sok;
+
+            QObject::connect(sok,       &QLocalSocket::connected, [this](){
                 onConnected();
             });
-            QObject::connect(ilocalSocket,  &QLocalSocket::readyRead, [this](){
+            QObject::connect(sok,       &QLocalSocket::readyRead, [this](){
                 onReadyRead();
             });
-            QObject::connect(ilocalSocket,  &QLocalSocket::disconnected,
-                             q_func(),      &QHttpClient::disconnected);
+            QObject::connect(sok,       &QLocalSocket::bytesWritten, [this](qint64){
+                if ( isocket.ilocalSocket->bytesToWrite() == 0  &&  ilastRequest )
+                    emit ilastRequest->allBytesWritten();
+            });
+            QObject::connect(sok,       &QLocalSocket::disconnected,
+                             q_func(),  &QHttpClient::disconnected);
         }
     }
 
@@ -93,15 +120,43 @@ public:
     int          messageComplete(http_parser* parser);
 
 protected:
-    void         onConnected();
-    void         onReadyRead();
+    void         onConnected() {
+        if ( itimeOut > 0 )
+            itimer.start(itimeOut, Qt::CoarseTimer, q_func());
+
+        if ( ireqHandler )
+            ireqHandler(ilastRequest);
+        else
+            q_func()->onRequestReady(ilastRequest);
+    }
+
+    void         onReadyRead() {
+        while ( isocket.bytesAvailable() > 0 ) {
+            char buffer[4097] = {0};
+            size_t readLength = (size_t) isocket.readRaw(buffer, 4096);
+
+            parse(buffer, readLength);
+        }
+
+        onDispatchResponse();
+    }
+
+    void         onDispatchResponse() {
+        // if ilastResponse has been sent previously, just return
+        if ( ilastResponse->d_func()->ireadState == QHttpResponsePrivate::ESent )
+            return;
+
+        ilastResponse->d_func()->ireadState = QHttpResponsePrivate::ESent;
+        emit ilastResponse->end();
+    }
 
 protected:
-    QHttpClient* const      q_ptr;
+    QHttpClient* const  q_ptr;
 
-    QHttpResponse*          ilastResponse = nullptr;
-    TRequstHandler          ireqHandler;
-    TResponseHandler        irespHandler;
+    QHttpRequest*       ilastRequest  = nullptr;
+    QHttpResponse*      ilastResponse = nullptr;
+    TRequstHandler      ireqHandler;
+    TResponseHandler    irespHandler;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

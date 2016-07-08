@@ -32,14 +32,15 @@ public:
 
     virtual    ~QHttpServer();
 
-    /** starts a Local server (unix domain socket) on specified socket name.
+    /** starts a TCP or Local (unix domain socket) server.
      * if you provide a server handler, the newRequest() signal won't be emitted.
      *
-     * @param socket unix socket name.
+     * @param socketOrPort could be a tcp port number as "8080" or a unix socket name as
+     *  "/tmp/sample.socket" or "sample.socket".
      * @param handler optional server handler (a lambda, std::function, ...)
      * @return false if listening fails.
      */
-    bool        listen(const QString& socket,
+    bool        listen(const QString& socketOrPort,
                        const TServerHandler& handler = nullptr);
 
     /** starts a TCP server on specified address and port.
@@ -80,7 +81,12 @@ signals:
     /** emitted when a client makes a new request to the server if you do not override
      *  incomingConnection(QHttpConnection *connection);
      * @sa incommingConnection(). */
-    void        newRequest(QHttpRequest *request, QHttpResponse *response);
+    void        newRequest(qhttp::server::QHttpRequest *request, qhttp::server::QHttpResponse *response);
+
+    /** emitted when a new connection comes to the server if you do not override
+     *  incomingConnection(QHttpConnection *connection);
+     * @sa incomingConnection(); */
+    void        newConnection(QHttpConnection* connection);
 
 protected:
     /** returns the tcp server instance if the backend() == ETcpSocket. */

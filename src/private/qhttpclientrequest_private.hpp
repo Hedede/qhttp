@@ -19,16 +19,12 @@
 namespace qhttp {
 namespace client {
 ///////////////////////////////////////////////////////////////////////////////
-class QHttpRequestPrivate : public HttpRequestBase,
-        public HttpWriterBase<QHttpRequestPrivate>
+class QHttpRequestPrivate : public HttpWriter<HttpRequestBase, QHttpRequestPrivate>
 {
     Q_DECLARE_PUBLIC(QHttpRequest)
 
 public:
-    explicit    QHttpRequestPrivate(QHttpClient* cli, QHttpRequest* q)
-        : HttpWriterBase(), q_ptr(q), iclient(cli) {
-        iversion    = "1.1";
-
+    explicit    QHttpRequestPrivate(QHttpClient* cli, QHttpRequest* q) : q_ptr(q), iclient(cli) {
         QHTTP_LINE_DEEPLOG
     }
 
@@ -37,28 +33,16 @@ public:
     }
 
     void        initialize() {
-        if ( iclient->backendType() == ETcpSocket )
-            itcpSocket   = iclient->tcpSocket();
-        else if ( iclient->backendType() == ELocalSocket )
-            ilocalSocket = iclient->localSocket();
+        iversion    = "1.1";
 
-        HttpWriterBase::initialize();
-
-        QObject::connect(iclient,      &QHttpClient::disconnected, [this]() {
-            ifinished   = true;
-        });
+        isocket.ibackendType  = iclient->backendType();
+        isocket.itcpSocket    = iclient->tcpSocket();
+        isocket.ilocalSocket  = iclient->localSocket();
     }
 
-    void        allBytesWritten() {
-        emit q_func()->allBytesWritten();
-    }
+    QByteArray  makeTitle();
 
-    void        ensureWritingHeaders();
-
-    void        writeHeaders();
-
-public:
-    bool                 ikeepAlive = false;
+    void        prepareHeadersToWrite();
 
 protected:
     QHttpRequest* const  q_ptr;

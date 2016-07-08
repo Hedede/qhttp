@@ -31,56 +31,41 @@ QHttpClient::setTimeOut(quint32 t) {
 
 bool
 QHttpClient::isOpen() const {
-    const Q_D(QHttpClient);
-
-    if ( d->ibackendType == ETcpSocket    &&    d->itcpSocket ) {
-        return d->itcpSocket->isOpen()    &&    d->itcpSocket->state() == QTcpSocket::ConnectedState;
-
-    } else if ( d->ibackendType == ELocalSocket    &&    d->ilocalSocket ) {
-        return d->ilocalSocket->isOpen()    &&    d->ilocalSocket->state() == QLocalSocket::ConnectedState;
-    }
-
-    return false;
+    return d_func()->isocket.isOpen();
 }
 
 void
 QHttpClient::killConnection() {
-    Q_D(QHttpClient);
-
-    if ( d->itcpSocket )
-        d->itcpSocket->disconnectFromHost();
-    if ( d->ilocalSocket )
-        d->ilocalSocket->disconnectFromServer();
+    d_func()->isocket.close();
 }
 
 TBackend
 QHttpClient::backendType() const {
-    return d_func()->ibackendType;
+    return d_func()->isocket.ibackendType;
 }
 
 QTcpSocket*
 QHttpClient::tcpSocket() const {
-    return d_func()->itcpSocket;
+    return d_func()->isocket.itcpSocket;
 }
 
 QLocalSocket*
 QHttpClient::localSocket() const {
-    return d_func()->ilocalSocket;
+    return d_func()->isocket.ilocalSocket;
 }
 
 bool
 QHttpClient::request(THttpMethod method, QUrl url,
-                     const TRequstHandler &reqHandler, const TResponseHandler &resHandler) {
+                     const TRequstHandler &reqHandler,
+                     const TResponseHandler &resHandler) {
     Q_D(QHttpClient);
 
     d->ireqHandler   = nullptr;
     d->irespHandler  = nullptr;
 
-    if ( !url.isValid()    ||    url.isEmpty()    ||    url.host().isEmpty() )
+    // if url is a local file (UNIX socket) the host could be empty!
+    if ( !url.isValid()    ||    url.isEmpty()    /*||    url.host().isEmpty()*/ )
         return false;
-
-    d->ilastMethod  = method;
-    d->ilastUrl     = url;
 
     // process handlers
     if ( resHandler ) {
@@ -89,23 +74,51 @@ QHttpClient::request(THttpMethod method, QUrl url,
         if ( reqHandler )
             d->ireqHandler = reqHandler;
         else
-            d->ireqHandler = [](QHttpRequest* req) ->void { req->end(); };
+            d->ireqHandler = [](QHttpRequest* req) ->void {
+                req->addHeader("connection", "close");
+                req->end();
+            };
     }
+
+    auto requestCreator = [&]() {
+        // create request object
+        if ( d->ilastRequest )
+            d->ilastRequest->deleteLater();
+
+        d->ilastRequest = new QHttpRequest(this);
+        QObject::connect(d->ilastRequest, &QHttpRequest::done, [this](bool wasTheLastPacket){
+            d_func()->ikeepAlive = !wasTheLastPacket;
+        });
+
+        d->ilastRequest->d_func()->imethod  = method;
+        d->ilastRequest->d_func()->iurl     = url;
+    };
 
     // connecting to host/server must be the last thing. (after all function handlers and ...)
     // check for type
-    if ( url.scheme().toLower() == QLatin1String("socket") ) {
-        d->ibackendType = ELocalSocket;
+    if ( url.scheme().toLower() == QLatin1String("file") ) {
+        d->isocket.ibackendType = ELocalSocket;
         d->initializeSocket();
 
-        d->ilocalSocket->connectToServer(url.host());
+        requestCreator();
+
+        if ( d->isocket.isOpen() )
+            d->onConnected();
+        else
+            d->isocket.connectTo(url);
 
     } else {
-        d->ibackendType = ETcpSocket;
+        d->isocket.ibackendType = ETcpSocket;
         d->initializeSocket();
 
-        d->itcpSocket->connectToHost(url.host(), url.port(80));
+        requestCreator();
+
+        if ( d->isocket.isOpen() )
+            d->onConnected();
+        else
+            d->isocket.connectTo(url.host(), url.port(80));
     }
+
 
     return true;
 }
@@ -131,45 +144,6 @@ QHttpClient::onResponseReady(QHttpResponse *res) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-void
-QHttpClientPrivate::onConnected() {
-    QHttpRequest *request = new QHttpRequest(q_func());
-
-    request->d_func()->imethod  = ilastMethod;
-    request->d_func()->iurl     = ilastUrl;
-
-    if ( itimeOut > 0 )
-        itimer.start(itimeOut, Qt::CoarseTimer, q_func());
-
-    if ( ireqHandler )
-        ireqHandler(request);
-    else
-        q_func()->onRequestReady(request);
-}
-
-void
-QHttpClientPrivate::onReadyRead() {
-    if ( itcpSocket ) {
-        while ( itcpSocket->bytesAvailable() > 0 ) {
-            char buffer[4097] = {0};
-            size_t readLength = itcpSocket->read(buffer, 4096);
-
-            parse(buffer, readLength);
-        }
-
-    } else if ( ilocalSocket ) {
-        while ( ilocalSocket->bytesAvailable() > 0 ) {
-            char buffer[4097] = {0};
-            size_t readLength = ilocalSocket->read(buffer, 4096);
-
-            parse(buffer, readLength);
-        }
-    }
-
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
 // if user closes the connection, ends the response or by any other reason
 //  the socket be disconnected, then the iresponse instance may has been deleted.
 //  In these situations reading more http body or emitting end() for incoming response
@@ -188,13 +162,15 @@ QHttpClientPrivate::messageBegin(http_parser*) {
 
 int
 QHttpClientPrivate::status(http_parser* parser, const char* at, size_t length) {
+    if ( ilastResponse )
+        ilastResponse->deleteLater();
 
     ilastResponse = new QHttpResponse(q_func());
     ilastResponse->d_func()->istatus  = static_cast<TStatusCode>(parser->status_code);
     ilastResponse->d_func()->iversion = QString("%1.%2")
                                         .arg(parser->http_major)
                                         .arg(parser->http_minor);
-    ilastResponse->d_func()->icustomeStatusMessage = QString::fromUtf8(at, length);
+    ilastResponse->d_func()->icustomStatusMessage = QString::fromUtf8(at, length);
 
     return 0;
 }
@@ -251,11 +227,16 @@ int
 QHttpClientPrivate::body(http_parser*, const char* at, size_t length) {
     CHECK_FOR_DISCONNECTED
 
-    if ( ilastResponse->idataHandler )
-        ilastResponse->idataHandler(QByteArray(at, length));
-    else
-        emit ilastResponse->data(QByteArray(at, length));
+    ilastResponse->d_func()->ireadState = QHttpResponsePrivate::EPartial;
 
+    if ( ilastResponse->d_func()->shouldCollect() ) {
+        if ( !ilastResponse->d_func()->append(at, length) )
+            onDispatchResponse(); // forcefully dispatch the ilastResponse
+
+        return 0;
+    }
+
+    emit ilastResponse->data(QByteArray(at, length));
     return 0;
 }
 
@@ -263,17 +244,9 @@ int
 QHttpClientPrivate::messageComplete(http_parser*) {
     CHECK_FOR_DISCONNECTED
 
-    // prevents double messageComplete!
-    if ( ilastResponse->d_func()->isuccessful )
-        return 0;
-
+    // response is ready to be  dispatched
     ilastResponse->d_func()->isuccessful = true;
-
-    if ( ilastResponse->iendHandler )
-        ilastResponse->iendHandler();
-    else
-        emit ilastResponse->end();
-
+    ilastResponse->d_func()->ireadState  = QHttpResponsePrivate::EComplete;
     return 0;
 }
 

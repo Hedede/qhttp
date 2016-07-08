@@ -27,7 +27,7 @@ QHttpResponse::status() const {
 
 const QString&
 QHttpResponse::statusString() const {
-    return d_func()->icustomeStatusMessage;
+    return d_func()->icustomStatusMessage;
 }
 
 const QString&
@@ -43,6 +43,16 @@ QHttpResponse::headers() const {
 bool
 QHttpResponse::isSuccessful() const {
     return d_func()->isuccessful;
+}
+
+void
+QHttpResponse::collectData(int atMost) {
+    d_func()->collectData(atMost);
+}
+
+const QByteArray&
+QHttpResponse::collectedData() const {
+    return d_func()->icollectedData;
 }
 
 QHttpClient*

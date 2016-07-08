@@ -30,6 +30,11 @@ QHttpRequest::addHeader(const QByteArray &field, const QByteArray &value) {
     d_func()->addHeader(field, value);
 }
 
+void
+QHttpRequest::addHeaders(const QHash<QByteArray, QByteArray> &headers) {
+    d_func()->addHeaders(headers);
+}
+
 THeaderHash&
 QHttpRequest::headers() {
     return d_func()->iheaders;
@@ -45,7 +50,7 @@ QHttpRequest::end(const QByteArray &data) {
     Q_D(QHttpRequest);
 
     if ( d->endPacket(data) )
-        emit done(false);   // should wait for response packet
+        emit done(!d->ikeepAlive);
 }
 
 QHttpClient*
@@ -54,10 +59,8 @@ QHttpRequest::connection() const {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void
-QHttpRequestPrivate::ensureWritingHeaders() {
-    if ( ifinished    ||    iheaderWritten )
-        return;
+QByteArray
+QHttpRequestPrivate::makeTitle() {
 
     QByteArray title;
     title.reserve(512);
@@ -77,21 +80,11 @@ QHttpRequestPrivate::ensureWritingHeaders() {
             .append(iversion.toLatin1())
             .append("\r\n");
 
-    writeRaw(title);
-    writeHeaders();
-
-    iheaderWritten = true;
+    return title;
 }
 
 void
-QHttpRequestPrivate::writeHeaders() {
-    if ( ifinished    ||    iheaderWritten )
-        return;
-
-    if ( iheaders.keyHasValue("connection", "keep-alive") )
-        ikeepAlive = true;
-    else
-        iheaders.insert("connection", "close");
+QHttpRequestPrivate::prepareHeadersToWrite() {
 
     if ( !iheaders.contains("host") ) {
         quint16 port = iurl.port();
@@ -102,20 +95,6 @@ QHttpRequestPrivate::writeHeaders() {
                         QString("%1:%2").arg(iurl.host()).arg(port).toLatin1()
                         );
     }
-
-    for ( auto cit = iheaders.constBegin(); cit != iheaders.constEnd(); cit++ ) {
-        const QByteArray& field = cit.key();
-        const QByteArray& value = cit.value();
-
-        writeHeader(field, value);
-    }
-
-    writeRaw("\r\n");
-
-    if ( itcpSocket )
-        itcpSocket->flush();
-    else if ( ilocalSocket )
-        ilocalSocket->flush();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
