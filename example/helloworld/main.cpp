@@ -19,7 +19,7 @@ void    runServer(QCoreApplication& app) {
 
     QHttpServer server(&app);
     // listening on 0.0.0.0:8080
-    server.listen(QHostAddress::Any, 8080, [](QHttpRequest* req, QHttpResponse* res) {
+    server.listen(QHostAddress::Any, 8080, [](QHttpRequest* /*req*/, QHttpResponse* res) {
 
         res->setStatusCode(qhttp::ESTATUS_OK);      // status 200
         res->addHeader("connection", "close");      // it's the default header, this line can be omitted.
@@ -81,7 +81,7 @@ void    runLocalServer(QCoreApplication& app) {
 
     QHttpServer server(&app);
     // listening on socket://helloworld
-    server.listen(QString("helloworld.socket"), [](QHttpRequest* req, QHttpResponse* res) {
+    server.listen(QString("helloworld.socket"), [](QHttpRequest* /*req*/, QHttpResponse* res) {
 
         res->setStatusCode(qhttp::ESTATUS_OK);      // status 200
         res->addHeader("connection", "close");      // it's the default header, this line can be omitted.
