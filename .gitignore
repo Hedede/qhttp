@@ -1,9 +1,11 @@
 # 3rdparty, tmp and build direcotry
+build.properties
 3rdparty
 tmp
 xbin
 docs/html
 res/keys
+vendor
 
 # ahh! OSX finder!
 .DS_Store
@@ -19,6 +21,7 @@ Makefile*
 *.o
 *.qmake.stash
 *.pro.user*
+*.un~
 
 # Visual studio
 *.ncb

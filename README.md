@@ -169,7 +169,7 @@ see why other top performer networking libraries as ZeroMQ are concurrent but no
 [TOC](#table-of-contents)
 
 
-* **`3rdparty/`**:
+* **`vendor/`**:
 will contain `http-parser` source tree as the only dependency.
 this directory is created by setup. see also: [setup](#setup).
 
