@@ -63,6 +63,12 @@ signals:
      */
     void            newRequest(QHttpRequest* req, QHttpResponse* res);
 
+    /** emitted when a HTTP request is completely read.
+     * @param req incoming request by the client.
+     * @param res outgoing response to the client.
+     */
+    void            completeRequest(QHttpRequest* req, QHttpResponse* res);
+
     /** emitted when the tcp/local socket, disconnects. */
     void            disconnected();
 
