@@ -75,10 +75,10 @@ int
 QHttpConnectionPrivate::messageBegin(http_parser*) {
     itempUrl.clear();
     itempUrl.reserve(128);
-
+    
     if ( ilastRequest )
         ilastRequest->deleteLater();
-
+    
     ilastRequest = new QHttpRequest(q_func());
     return 0;
 }
@@ -86,7 +86,7 @@ QHttpConnectionPrivate::messageBegin(http_parser*) {
 int
 QHttpConnectionPrivate::url(http_parser*, const char* at, size_t length) {
     Q_ASSERT(ilastRequest);
-
+    
     itempUrl.append(at, length);
     return 0;
 }
@@ -94,10 +94,10 @@ QHttpConnectionPrivate::url(http_parser*, const char* at, size_t length) {
 int
 QHttpConnectionPrivate::headerField(http_parser*, const char* at, size_t length) {
     CHECK_FOR_DISCONNECTED
-
-    // insert the header we parsed previously
-    // into the header map
-    if ( !itempHeaderField.isEmpty() && !itempHeaderValue.isEmpty() ) {
+            
+            // insert the header we parsed previously
+            // into the header map
+            if ( !itempHeaderField.isEmpty() && !itempHeaderValue.isEmpty() ) {
         // header names are always lower-cased
         ilastRequest->d_func()->iheaders.insert(
                     itempHeaderField.toLower(),
@@ -109,7 +109,7 @@ QHttpConnectionPrivate::headerField(http_parser*, const char* at, size_t length)
         itempHeaderField.clear();
         itempHeaderValue.clear();
     }
-
+    
     itempHeaderField.append(at, length);
     return 0;
 }
@@ -117,65 +117,65 @@ QHttpConnectionPrivate::headerField(http_parser*, const char* at, size_t length)
 int
 QHttpConnectionPrivate::headerValue(http_parser*, const char* at, size_t length) {
     CHECK_FOR_DISCONNECTED
-
-    itempHeaderValue.append(at, length);
+            
+            itempHeaderValue.append(at, length);
     return 0;
 }
 
 int
 QHttpConnectionPrivate::headersComplete(http_parser* parser) {
     CHECK_FOR_DISCONNECTED
-
-#if defined(USE_CUSTOM_URL_CREATOR)
-    // get parsed url
-    struct http_parser_url urlInfo;
-    int r = http_parser_parse_url(itempUrl.constData(),
-                                  itempUrl.size(),
-                                  parser->method == HTTP_CONNECT,
-                                  &urlInfo);
-    Q_ASSERT(r == 0);
-    Q_UNUSED(r);
-
-    ilastRequest->d_func()->iurl = createUrl(
-                                       itempUrl.constData(),
-                                       urlInfo
-                                       );
+            
+        #if defined(USE_CUSTOM_URL_CREATOR)
+            // get parsed url
+            struct http_parser_url urlInfo;
+            int r = http_parser_parse_url(itempUrl.constData(),
+                                          itempUrl.size(),
+                                          parser->method == HTTP_CONNECT,
+                                          &urlInfo);
+            Q_ASSERT(r == 0);
+            Q_UNUSED(r);
+            
+            ilastRequest->d_func()->iurl = createUrl(
+                                               itempUrl.constData(),
+                                               urlInfo
+                                               );
 #else
-    ilastRequest->d_func()->iurl = QUrl(itempUrl);
+            ilastRequest->d_func()->iurl = QUrl(itempUrl);
 #endif // defined(USE_CUSTOM_URL_CREATOR)
-
+    
     // set method
     ilastRequest->d_func()->imethod =
             static_cast<THttpMethod>(parser->method);
-
+    
     // set version
     ilastRequest->d_func()->iversion = QString("%1.%2")
                                        .arg(parser->http_major)
                                        .arg(parser->http_minor);
-
+    
     // Insert last remaining header
     ilastRequest->d_func()->iheaders.insert(
                 itempHeaderField.toLower(),
                 itempHeaderValue.toLower()
                 );
-
+    
     // set client information
     if ( isocket.ibackendType == ETcpSocket ) {
         ilastRequest->d_func()->iremoteAddress = isocket.itcpSocket->peerAddress().toString();
         ilastRequest->d_func()->iremotePort    = isocket.itcpSocket->peerPort();
-
+        
     } else if ( isocket.ibackendType == ELocalSocket ) {
         ilastRequest->d_func()->iremoteAddress = isocket.ilocalSocket->fullServerName();
         ilastRequest->d_func()->iremotePort    = 0; // not used in local sockets
     }
-
+    
     if ( ilastResponse )
         ilastResponse->deleteLater();
     ilastResponse  = new QHttpResponse(q_func());
-
+    
     if ( parser->http_major < 1 || parser->http_minor < 1  )
         ilastResponse->d_func()->ikeepAlive = false;
-
+    
     // close the connection if response was the last packet
     QObject::connect(ilastResponse, &QHttpResponse::done, [this](bool wasTheLastPacket){
         ikeepAlive = !wasTheLastPacket;
@@ -184,41 +184,42 @@ QHttpConnectionPrivate::headersComplete(http_parser* parser) {
             isocket.close();
         }
     });
-
+    
     // we are good to go!
     if ( ihandler )
         ihandler(ilastRequest, ilastResponse);
     else
         emit q_ptr->newRequest(ilastRequest, ilastResponse);
-
+    
     return 0;
 }
 
 int
 QHttpConnectionPrivate::body(http_parser*, const char* at, size_t length) {
     CHECK_FOR_DISCONNECTED
-
-    ilastRequest->d_func()->ireadState = QHttpRequestPrivate::EPartial;
-
-    if ( ilastRequest->d_func()->shouldCollect() ) {
-        if ( !ilastRequest->d_func()->append(at, length) )
-            onDispatchRequest(); // forcefully dispatch the ilastRequest
-
+            
+            ilastRequest->d_func()->ireadState = QHttpRequestPrivate::EPartial;
+    
+    if ( ilastRequest->d_func()->icollectRequired ) {
+        if ( !ilastRequest->d_func()->append(at, length) ) {
+            // forcefully dispatch the ilastRequest
+            onDispatchRequest();
+        }
         return 0;
     }
-
     emit ilastRequest->data(QByteArray(at, length));
     return 0;
 }
 
 int
 QHttpConnectionPrivate::messageComplete(http_parser*) {
-    CHECK_FOR_DISCONNECTED
+    if ( ilastRequest == nullptr )
+        return 0;
 
-     // request is ready to be dispatched
-    ilastRequest->d_func()->isuccessful = true;
-    ilastRequest->d_func()->ireadState  = QHttpRequestPrivate::EComplete;
-    emit q_ptr->completeRequest(ilastRequest, ilastResponse);
+    // request is done
+    ilastRequest->d_func()->finalizeSending([this]{
+        emit ilastRequest->end();
+    });
     return 0;
 }
 
@@ -253,10 +254,10 @@ QHttpConnectionPrivate::createUrl(const char *urlData, const http_parser_url &ur
 #endif
     url.setFragment(CHECK_AND_GET_FIELD(urlData, urlInfo, UF_FRAGMENT));
     url.setUserInfo(CHECK_AND_GET_FIELD(urlData, urlInfo, UF_USERINFO));
-
+    
     if (HAS_URL_FIELD(urlInfo, UF_PORT))
         url.setPort(urlInfo.port);
-
+    
     return url;
 }
 

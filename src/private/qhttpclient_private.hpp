@@ -38,10 +38,9 @@ public:
 
     void         release() {
         // if socket drops and http_parser can not call messageComplete, dispatch the ilastResponse
-        onDispatchResponse();
+        finalizeConnection();
 
         isocket.disconnectAllQtConnections();
-        isocket.close();
         isocket.release();
 
         if ( ilastRequest ) {
@@ -138,10 +137,10 @@ protected:
             parse(buffer, readLength);
         }
 
-        onDispatchResponse();
+        finalizeConnection();
     }
 
-    void         onDispatchResponse() {
+    void         finalizeConnection() {
         // if ilastResponse has been sent previously, just return
         if ( ilastResponse->d_func()->ireadState == QHttpResponsePrivate::ESent )
             return;

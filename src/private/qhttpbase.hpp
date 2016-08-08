@@ -156,9 +156,11 @@ public:
 
 public:
     void            collectData(int atMost) {
+        icollectRequired = true;
         icollectCapacity = atMost;
         icollectedData.clear();
-        icollectedData.reserve(atMost);
+        if ( atMost > 0 )
+            icollectedData.reserve(atMost);
     }
 
     bool            shouldCollect() const {
@@ -166,19 +168,32 @@ public:
     }
 
     bool            append(const char* data, size_t length) {
-        int currentLength = icollectedData.length();
-
-        if ( (currentLength + (int)length) >= icollectCapacity )
-            return false;       // capacity if full
-
+        if ( !icollectRequired ) // not allowed to collect data
+            return false;
+        int newLength = icollectedData.length() + (int) length;
+         
+        if ( icollectCapacity > 0    &&    newLength > icollectCapacity )
+            return false; // the capacity is full
         icollectedData.append(data, length);
         return true;
+    }
+    
+        // call cb if the message is not finalized yet
+        template<class Func>
+        void finalizeSending(Func cb) {
+            if ( ireadState != EComplete ) {
+                ireadState  = EComplete;
+                isuccessful = true;
+                cb();
+            }
     }
 
 public:
     TReadState      ireadState = EEmpty;
     bool            isuccessful = false;
 
+    /// shall I collect incoming body data by myself?
+    bool            icollectRequired = false;
     int             icollectCapacity = 0;
     QByteArray      icollectedData;
 };
@@ -301,7 +316,7 @@ public:
         iparserSettings.on_header_value     = onHeaderValue;
         iparserSettings.on_headers_complete = onHeadersComplete;
         iparserSettings.on_body             = onBody;
-        iparserSettings.on_message_complete = onMessageComplete;
+//        iparserSettings.on_message_complete = onMessageComplete;
     }
 
     size_t       parse(const char* data, size_t length) {

@@ -231,7 +231,7 @@ QHttpClientPrivate::body(http_parser*, const char* at, size_t length) {
 
     if ( ilastResponse->d_func()->shouldCollect() ) {
         if ( !ilastResponse->d_func()->append(at, length) )
-            onDispatchResponse(); // forcefully dispatch the ilastResponse
+            finalizeConnection(); // forcefully dispatch the ilastResponse
 
         return 0;
     }
