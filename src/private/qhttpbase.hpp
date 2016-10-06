@@ -10,8 +10,9 @@
 #define QHTTPBASE_HPP
 
 #include "qhttpfwd.hpp"
-
+#include "qhttpheaders.hpp"
 #include "qsocket.hpp"
+
 #include <QHostAddress>
 #include <QBasicTimer>
 
