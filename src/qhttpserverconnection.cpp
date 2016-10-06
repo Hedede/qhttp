@@ -4,15 +4,11 @@
 namespace qhttp {
 namespace server {
 ///////////////////////////////////////////////////////////////////////////////
-QHttpConnection::QHttpConnection(QObject *parent)
-    : QObject(parent), d_ptr(new QHttpConnectionPrivate(this)) {
-    QHTTP_LINE_LOG
-}
+QHttpConnection::QHttpConnection(QHttpServer *parent)
+    : QObject(parent), d_ptr(new QHttpConnectionPrivate(this, parent)) { }
 
-QHttpConnection::QHttpConnection(QHttpConnectionPrivate& dd, QObject* parent)
-    : QObject(parent), d_ptr(&dd) {
-    QHTTP_LINE_LOG
-}
+QHttpConnection::QHttpConnection(QHttpConnectionPrivate& dd, QHttpServer* parent)
+    : QObject(parent), d_ptr(&dd) { }
 
 void
 QHttpConnection::setSocketDescriptor(qintptr sokDescriptor, TBackend backendType) {

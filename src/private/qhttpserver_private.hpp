@@ -14,6 +14,7 @@
 #include "qhttpserverconnection.hpp"
 #include "qhttpserverrequest.hpp"
 #include "qhttpserverresponse.hpp"
+#include "qhttpsslconfig.hpp"
 
 #include <QTcpServer>
 #include <QLocalServer>
@@ -62,6 +63,8 @@ public:
 
     QByteArray      iproxyHeader;
 
+    ssl::Config     isslConfig;
+
 public:
     explicit    QHttpServerPrivate() : iwsServer("QHTTP", QWebSocketServer::NonSecureMode) {
         QHTTP_LINE_DEEPLOG
@@ -75,8 +78,8 @@ public:
         ibackend = backend;
 
         if ( ibackend == ETcpSocket ) {
-            itcpServer.reset( new BackendServer<QTcpServer>(parent) );
             ilocalServer.reset( nullptr );
+            itcpServer.reset( new BackendServer<QTcpServer>(parent) );
 
         } else if ( ibackend == ELocalSocket ) {
             itcpServer.reset( nullptr );
