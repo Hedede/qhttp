@@ -53,6 +53,10 @@ struct Config {
         : myKey(loadKey(keyFilePath)),
           myCertificate(loadCertificate(certFilePath)) {}
 
+    explicit Config(const QSslKey& key, const QSslCertificate& cert)
+        : myKey(key),
+          myCertificate(cert) {}
+
     Config() = default;
 }; // struct Config
 
