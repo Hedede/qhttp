@@ -1,5 +1,5 @@
-#include "qhttp/qhttpsslsocket.hpp"
-#include "qhttp/qhttpabstracts.hpp"
+#include "qhttpsslsocket.hpp"
+#include "qhttpabstracts.hpp"
 
 #include <QSslConfiguration>
 #include <QHostAddress>
