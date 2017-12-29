@@ -51,14 +51,9 @@ ssl::Socket::Socket(QObject* parent) : QSslSocket(parent) {
     // log ssl errors
     void (QSslSocket::*serrFunc)(const QList<QSslError>&) =
         &QSslSocket::sslErrors;
-    QObject::connect(this, serrFunc, [this](const auto& errors) {
-        this->onSslErrors(errors);
-    });
+    QObject::connect(this, serrFunc, this, &Socket::onSslErrors);
 
-    QObject::connect(
-        this, &QSslSocket::peerVerifyError, [this](const QSslError& err) {
-        this->onPeerVerifyError(err);
-    });
+    QObject::connect(this, &QSslSocket::peerVerifyError, this, &Socket::onPeerVerifyError);
 }
 
 void
