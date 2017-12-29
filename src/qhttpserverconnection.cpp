@@ -201,6 +201,7 @@ QHttpConnectionPrivate::headersComplete(http_parser* parser) {
     QObject::connect(ilastResponse, &QHttpResponse::done, [this](bool wasTheLastPacket){
         ikeepAlive = !wasTheLastPacket;
         if ( wasTheLastPacket ) {
+            qDebug("last pkt");
             isocket.flush();
             isocket.close();
         }
