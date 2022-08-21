@@ -1,4 +1,4 @@
-/** interfaces of QHttp' incomming and outgoing classes.
+/** interfaces of QHttp' incoming and outgoing classes.
  * https://github.com/azadkuh/qhttp
  *
  * @author amir zamani
